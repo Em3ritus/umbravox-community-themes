@@ -1,0 +1,180 @@
+name: Check a submitted theme
+# A stranger opened (or edited) a "Submit a theme" issue. Two jobs, on purpose:
+#   check    reads the form, downloads the zip and runs the device's theme loader and drawing code on it.
+#            It can only READ this repository and holds no secret, because it handles a stranger's files.
+#   propose  can write (branch, pull request, comment). It receives the checked files as data and runs nothing
+#            from them; scripts/propose.mjs validates every name, type and size again before copying.
+# Text from the issue reaches a script only through an environment variable, never pasted into a command.
+on:
+  issues:
+    types: [opened, edited]
+permissions: {}
+concurrency:
+  group: submission-${{ github.event.issue.number }}
+  cancel-in-progress: true
+jobs:
+  check:
+    if: contains(github.event.issue.labels.*.name, 'submission')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Each step below runs only while nothing has been refused. A refusal writes its one plain line to
+      # _work/art/result.txt and sets REFUSED, and the job still ends green: a bad submission is not a broken workflow.
+      - name: Read the form
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          mkdir -p _work/art
+          printf '%s' "$BODY" > _work/body.md
+          if url=$(node scripts/intake.mjs --body _work/body.md --url); then
+            echo "ZIP_URL=$url" >> "$GITHUB_ENV"
+          else
+            printf '%s\n' "$url" > _work/art/result.txt; echo "REFUSED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Download the zip
+        if: env.REFUSED == ''
+        run: |
+          # ZIP_URL matched ^https://github.com/user-attachments/files/<digits>/<name>.zip$ in scripts/intake.mjs.
+          if ! curl --silent --show-error --fail --location --proto '=https' --proto-redir '=https' \
+                --max-filesize 2097152 --max-time 60 --output _work/in.zip "$ZIP_URL"; then
+            echo "The zip could not be downloaded, or it is bigger than 2 MB. Attach the zip the designer saved and try again." > _work/art/result.txt
+            echo "REFUSED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Unpack the zip within the limits
+        if: env.REFUSED == ''
+        run: |
+          if ! msg=$(node scripts/intake.mjs --body _work/body.md --zip _work/in.zip --out _work/out); then
+            printf '%s\n' "$msg" > _work/art/result.txt; echo "REFUSED=1" >> "$GITHUB_ENV"; exit 0
+          fi
+          folder=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('_work/out/submission.json','utf8')).folder)")
+          name=$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('_work/out/submission.json','utf8')).name)")
+          echo "FOLDER=$folder" >> "$GITHUB_ENV"    # passed ^[A-Za-z0-9_-]{1,31}$ in scripts/zipread.mjs
+          if ! msg=$(node scripts/build-index.mjs . --clash "$folder" "$name"); then
+            printf '%s\n' "$msg" > _work/art/result.txt; echo "REFUSED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Read the firmware pin
+        if: env.REFUSED == ''
+        run: echo "FIRMWARE_PIN=$(tr -d '[:space:]' < FIRMWARE_PIN)" >> "$GITHUB_ENV"
+      - name: Get the firmware at the pinned release (the theme loader and the drawing code)
+        if: env.REFUSED == ''
+        uses: actions/checkout@v4
+        with:
+          repository: Em3ritus/umbravox
+          ref: ${{ env.FIRMWARE_PIN }}
+          path: fw
+          persist-credentials: false
+
+      - name: Check the pack with the device's own loader
+        if: env.REFUSED == ''
+        run: |
+          make -C fw/sim > _work/sim-build.log 2>&1 || { tail -20 _work/sim-build.log; exit 1; }
+          if ! out=$(fw/sim/umbravox --check-pack "_work/out/$FOLDER" 2>&1); then
+            printf 'The device would skip this theme: %s\n' "$(printf '%s' "$out" | head -1)" > _work/art/result.txt
+            echo "REFUSED=1" >> "$GITHUB_ENV"
+          fi
+
+      # Content screening (none yet). A later check on the picture, clip or sounds goes here: read
+      # _work/out/$FOLDER, and on a refusal write one line to _work/art/result.txt and set REFUSED like the steps above.
+
+      - name: Read the pinned emscripten version
+        if: env.REFUSED == ''
+        run: echo "EMSDK_VERSION=$(tr -d '[:space:]' < fw/tools/emsdk-version.txt)" >> "$GITHUB_ENV"
+      - name: Install emscripten
+        if: env.REFUSED == ''
+        uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021 # v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+          actions-cache-folder: emsdk-cache
+      - name: Draw the preview pictures with the device's drawing code
+        if: env.REFUSED == ''
+        run: |
+          bash fw/tools/build-designer-wasm.sh > _work/wasm-build.log 2>&1 || { tail -20 _work/wasm-build.log; exit 1; }
+          if ! err=$(node fw/tools/pack-preview.mjs "_work/out/$FOLDER" --out _work/art/previews 2>&1); then
+            printf 'The preview pictures could not be drawn: %s\n' "$(printf '%s' "$err" | head -1)" > _work/art/result.txt
+            echo "REFUSED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Collect the result
+        if: always()
+        run: |
+          mkdir -p _work/art
+          if [ -z "$REFUSED" ] && [ -d _work/art/previews ] && [ -n "$FOLDER" ]; then
+            cp -r "_work/out/$FOLDER" _work/art/
+            cp _work/out/submission.json _work/art/
+            echo OK > _work/art/result.txt
+          elif [ ! -f _work/art/result.txt ]; then
+            echo "The checks could not finish. A maintainer will look at it; nothing is wrong with your submission that we know of." > _work/art/result.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: submission
+          path: _work/art
+          retention-days: 7
+          if-no-files-found: error
+
+  propose:
+    needs: check
+    if: always() && needs.check.result != 'skipped' && needs.check.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number }}
+      LOGIN: ${{ github.event.issue.user.login }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: submission
+          path: _in
+
+      - name: Stage the theme (validates the artifact again; runs nothing from it)
+        run: |
+          node scripts/propose.mjs stage --in _in --root . --issue "$ISSUE" --login "$LOGIN" --date "$(date -u +%F)" > _result.json
+          if node -e "process.exit(JSON.parse(require('fs').readFileSync('_result.json','utf8')).ok ? 0 : 1)"; then
+            echo "STAGED=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Open or update the pull request
+        if: env.STAGED == '1'
+        run: |
+          branch="submit/$ISSUE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add themes previews
+          git commit -m "Add a submitted theme (submission #$ISSUE)"
+          git push --force origin "$branch"
+          node scripts/propose.mjs pr --result _result.json --issue "$ISSUE" --login "$LOGIN" --repo "$REPO" --branch "$branch" > _pr.md
+          if url=$(gh pr view "$branch" --json url,state --jq 'select(.state=="OPEN") | .url') && [ -n "$url" ]; then
+            gh pr edit "$branch" --body-file _pr.md
+          else
+            url=$(gh pr create --base main --head "$branch" --title "Theme submission #$ISSUE" --body-file _pr.md)
+          fi
+          echo "PR_URL=$url" >> "$GITHUB_ENV"
+
+      - name: Reply on the submission
+        run: |
+          node scripts/propose.mjs comment --result _result.json --pr "$PR_URL" > _comment.md
+          gh issue comment "$ISSUE" --body-file _comment.md

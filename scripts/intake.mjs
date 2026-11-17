@@ -2,6 +2,7 @@
 // A theme submission: read the issue form's text, then unpack the attached zip into a folder.
 //
 //   node scripts/intake.mjs --body <file> --zip <file> --out <dir>
+//   node scripts/intake.mjs --body <file> --url        print the attached zip's address (or the refusal, exit 1)
 //
 // On success writes <dir>/<folder>/<pack files> and <dir>/submission.json, exit 0.
 // On a refusal prints ONE plain line on stdout (it becomes the comment on the submission), writes nothing, exit 1.
@@ -47,6 +48,11 @@ export function parseSubmission(body) {
 function main(argv) {
   const arg = (k) => { const i = argv.indexOf(k); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null; };
   const bodyFile = arg('--body'), zipFile = arg('--zip'), out = arg('--out');
+  if (bodyFile && argv.includes('--url')) {                    // only the form: print the zip's address for the download step
+    const sub = parseSubmission(fs.readFileSync(bodyFile, 'utf8'));
+    process.stdout.write((sub.ok ? sub.zipUrl : String(sub.error).replace(/\s+/g, ' ').trim()) + '\n');
+    return sub.ok ? 0 : 1;
+  }
   if (!bodyFile || !zipFile || !out) { process.stderr.write('usage: node scripts/intake.mjs --body <file> --zip <file> --out <dir>\n'); return 2; }
   const refuse = (msg) => { process.stdout.write(String(msg).replace(/\s+/g, ' ').trim() + '\n'); return 1; };
 
