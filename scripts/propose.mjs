@@ -29,7 +29,7 @@ function plain(p, max) {
 }
 const only = (dir, allowed) => fs.readdirSync(dir).every((n) => allowed.includes(n));
 
-// inDir: result.txt, submission.json, <folder>/<pack files>, previews/{cyd,waveshare}.png
+// inDir: result.txt, submission.json, pack/<folder>/<pack files>, previews/{cyd,waveshare}.png
 // -> {ok:true, folder, name} after writing root/themes/<folder>/ and root/previews/<folder>/, or {ok:false, error}.
 export function stageSubmission(inDir, root, { issue, login, date }) {
   if (!Number.isInteger(issue) || issue < 1 || !/^[A-Za-z0-9-]{1,39}(\[bot\])?$/.test(String(login)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return no(UNEXPECTED);
@@ -44,9 +44,9 @@ export function stageSubmission(inDir, root, { issue, login, date }) {
   if (!sub || !text(sub.folder, 31) || !FOLDER_RE.test(sub.folder) || !text(sub.name, 60) || !sub.name.trim() || !text(sub.author, 60) || !text(sub.basedOn, 31)) return no(UNEXPECTED);
   if (sub.basedOn && !FOLDER_RE.test(sub.basedOn)) return no(UNEXPECTED);
 
-  const src = path.join(inDir, sub.folder), prev = path.join(inDir, 'previews');
-  for (const d of [src, prev]) { const s = fs.lstatSync(d, { throwIfNoEntry: false }); if (!s || !s.isDirectory()) return no(UNEXPECTED); }
-  if (!only(src, PACK_FILES) || !only(prev, PREVIEWS)) return no(UNEXPECTED);
+  const packDir = path.join(inDir, 'pack'), src = path.join(packDir, sub.folder), prev = path.join(inDir, 'previews');
+  for (const d of [packDir, src, prev]) { const s = fs.lstatSync(d, { throwIfNoEntry: false }); if (!s || !s.isDirectory()) return no(UNEXPECTED); }
+  if (!only(packDir, [sub.folder]) || !only(src, PACK_FILES) || !only(prev, PREVIEWS)) return no(UNEXPECTED);
   const files = [];
   for (const n of PACK_FILES) {
     if (!fs.existsSync(path.join(src, n))) continue;
@@ -82,8 +82,9 @@ export function stageSubmission(inDir, root, { issue, login, date }) {
   return { ok: true, folder: sub.folder, name, files: files.map((f) => f.n) };
 }
 
-// Text that came from a submission, made safe to show in a comment: one line, no mentions, no markup.
-const quiet = (s) => String(s).replace(/\s+/g, ' ').replace(/[`<>*_\[\]()#|~\\]/g, '').replace(/@/g, '(at)').trim().slice(0, 400);
+// Text that came from a submission, made safe to show in a comment: one line, no mentions, no markup, no address
+// that a reader could click.
+const quiet = (s) => String(s).replace(/\s+/g, ' ').replace(/:\/\//g, ' ').replace(/www\./gi, 'www ').replace(/[`<>*_\[\]()#|~\\]/g, '').replace(/@/g, '(at)').trim().slice(0, 400);
 
 export function commentBody(result, { pr = '' } = {}) {
   if (!result.ok) {

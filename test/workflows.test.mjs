@@ -84,6 +84,10 @@ test('the firmware is taken at the pinned tag', () => {
   assert.match(job(sub, 'check'), /persist-credentials: false/);
 });
 
+test('the artifact keeps the pack in its own folder, apart from the previews', () => {
+  assert.match(job(sub, 'check'), /cp -r "_work\/out\/\$FOLDER" _work\/art\/pack\//);
+});
+
 test('there is a marked place for content screening', () => {
   assert.match(sub, /Content screening \(none yet\)/);
 });

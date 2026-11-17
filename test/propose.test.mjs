@@ -16,8 +16,9 @@ function artifact(o = {}) {
   const sub = o.sub ?? { folder: 'ember', name: 'EMBER', author: 'Some One', basedOn: '' };
   if (o.sub !== null) fs.writeFileSync(path.join(d, 'submission.json'), typeof sub === 'string' ? sub : JSON.stringify(sub));
   const folder = o.folderOnDisk ?? 'ember';
-  fs.mkdirSync(path.join(d, folder), { recursive: true });
-  for (const [n, data] of Object.entries(o.files ?? { 'theme.json': '{"format":1,"name":"EMBER"}', 'emblem.bin': 'xx' })) fs.writeFileSync(path.join(d, folder, n), data);
+  fs.mkdirSync(path.join(d, 'pack', folder), { recursive: true });
+  for (const [n, data] of Object.entries(o.files ?? { 'theme.json': '{"format":1,"name":"EMBER"}', 'emblem.bin': 'xx' })) fs.writeFileSync(path.join(d, 'pack', folder, n), data);
+  if (o.extraPackDir) fs.mkdirSync(path.join(d, 'pack', o.extraPackDir));
   fs.mkdirSync(path.join(d, 'previews'));
   for (const [n, data] of Object.entries(o.previews ?? { 'cyd.png': PNG, 'waveshare.png': PNG })) fs.writeFileSync(path.join(d, 'previews', n), data);
   return d;
@@ -31,6 +32,15 @@ test('a checked submission is staged: pack files, meta.json and both previews', 
   assert.deepEqual(fs.readdirSync(path.join(root, 'themes/ember')).sort(), ['emblem.bin', 'meta.json', 'theme.json']);
   assert.deepEqual(fs.readdirSync(path.join(root, 'previews/ember')).sort(), ['cyd.png', 'waveshare.png']);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'themes/ember/meta.json'), 'utf8')), { login: 'someone', issue: 12, added: '2026-11-17', author: 'Some One', basedOn: '' });
+});
+
+test('a theme whose folder is called previews or pack is staged like any other', () => {
+  for (const f of ['previews', 'pack', 'themes']) {
+    const root = tmp('uvt-root-');
+    const r = stageSubmission(artifact({ sub: { folder: f, name: 'X', author: '', basedOn: '' }, folderOnDisk: f }), root, ctx);
+    assert.equal(r.ok, true, f + ': ' + r.error);
+    assert.deepEqual(fs.readdirSync(path.join(root, 'themes', f)).sort(), ['emblem.bin', 'meta.json', 'theme.json']);
+  }
 });
 
 test('a refused submission stages nothing and carries the reason', () => {
@@ -53,6 +63,7 @@ test('anything unexpected in the artifact is refused, and nothing is written', (
     'a missing preview': { previews: { 'cyd.png': PNG } },
     'an extra preview file': { previews: { 'cyd.png': PNG, 'waveshare.png': PNG, 'x.html': '<script>' } },
     'a folder on disk that differs from submission.json': { folderOnDisk: 'other' },
+    'a second folder beside the pack': { extraPackDir: 'second' },
   };
   for (const [what, o] of Object.entries(cases)) {
     const root = tmp('uvt-root-');
@@ -64,8 +75,8 @@ test('anything unexpected in the artifact is refused, and nothing is written', (
 
 test('a symbolic link in the artifact is refused', () => {
   const d = artifact(), root = tmp('uvt-root-');
-  fs.rmSync(path.join(d, 'ember/emblem.bin'));
-  fs.symlinkSync('/etc/hostname', path.join(d, 'ember/emblem.bin'));
+  fs.rmSync(path.join(d, 'pack/ember/emblem.bin'));
+  fs.symlinkSync('/etc/hostname', path.join(d, 'pack/ember/emblem.bin'));
   assert.equal(stageSubmission(d, root, ctx).ok, false);
   assert.deepEqual(fs.readdirSync(root), []);
 });
@@ -116,6 +127,8 @@ test('the comment for a refusal is plain, and cannot mention anyone or break out
   assert.match(b, /could not be accepted/);
   assert.equal(/@everyone/.test(b), false);
   assert.equal(/<img/.test(b), false);
+  const link = commentBody({ ok: false, error: 'A name in the zip is not allowed: "https://evil.example/win http://x.example www.spam.example".' });
+  assert.equal(/https?:\/\/|www\./.test(link.split('\n').find((l) => l.startsWith('> '))), false, 'a refusal cannot carry a clickable address');
   assert.equal(b.split('\n').some((l) => l.startsWith('# ')), false);
   assert.match(b, /Share/);
 });

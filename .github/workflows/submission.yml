@@ -112,7 +112,8 @@ jobs:
         run: |
           mkdir -p _work/art
           if [ -z "$REFUSED" ] && [ -d _work/art/previews ] && [ -n "$FOLDER" ]; then
-            cp -r "_work/out/$FOLDER" _work/art/
+            mkdir -p _work/art/pack
+            cp -r "_work/out/$FOLDER" _work/art/pack/
             cp _work/out/submission.json _work/art/
             echo OK > _work/art/result.txt
           elif [ ! -f _work/art/result.txt ]; then
