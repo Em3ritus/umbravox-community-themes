@@ -93,6 +93,21 @@ test('the command unpacks the theme and writes submission.json', () => {
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, 'submission.json'), 'utf8')), { folder: 'ember', name: 'EMBER', author: 'someone', basedOn: 'cosmic-two' });
 });
 
+test('the name written to submission.json is the one inside theme.json, not the one typed in the form', () => {
+  const { r, out } = run(body({ name: 'TOTALLY NEW' }), zip([{ name: 'ember/theme.json', data: THEME }]));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(out, 'submission.json'), 'utf8')).name, 'EMBER');
+});
+
+test('a theme.json with no readable name is refused with one plain line', () => {
+  for (const tj of ['{nope', '{"format":1}', '{"name":""}']) {
+    const { r, out } = run(body(), zip([{ name: 'ember/theme.json', data: new TextEncoder().encode(tj) }]));
+    assert.equal(r.status, 1, tj);
+    assert.match(r.stdout, /theme\.json/);
+    assert.equal(fs.existsSync(out), false);
+  }
+});
+
 test('the command refuses a bad zip with one plain line and writes nothing', () => {
   const { r, out } = run(body(), zip([{ name: '../theme.json', data: THEME }]));
   assert.equal(r.status, 1);

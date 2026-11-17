@@ -4,6 +4,7 @@ name: Check a submitted theme
 #            It can only READ this repository and holds no secret, because it handles a stranger's files.
 #   propose  can write (branch, pull request, comment). It receives the checked files as data and runs nothing
 #            from them; scripts/propose.mjs validates every name, type and size again before copying.
+#            It never updates an open pull request: an edited submission gets a new one and the old one is closed.
 # Text from the issue reaches a script only through an environment variable, never pasted into a command.
 on:
   issues:
@@ -14,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    if: contains(github.event.issue.labels.*.name, 'submission')
+    if: contains(github.event.issue.labels.*.name, 'submission') && github.event.issue.state == 'open'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -149,6 +150,17 @@ jobs:
           name: submission
           path: _in
 
+      # A pull request the owner may already have looked at must never change under them. So a new run never updates
+      # one: it closes any earlier pull request for this submission, then opens a fresh one on its own branch.
+      - name: Close earlier pull requests for this submission
+        run: |
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("submit/" + env.ISSUE + "-")) | .number' > _old.txt
+          while read -r n; do
+            [ -n "$n" ] || continue
+            gh pr close "$n" --delete-branch --comment "Closed: the submission was edited or checked again. If it still passes the checks, a new pull request follows."
+          done < _old.txt
+
       - name: Stage the theme (validates the artifact again; runs nothing from it)
         run: |
           node scripts/propose.mjs stage --in _in --root . --issue "$ISSUE" --login "$LOGIN" --date "$(date -u +%F)" > _result.json
@@ -156,22 +168,18 @@ jobs:
             echo "STAGED=1" >> "$GITHUB_ENV"
           fi
 
-      - name: Open or update the pull request
+      - name: Open the pull request
         if: env.STAGED == '1'
         run: |
-          branch="submit/$ISSUE"
+          branch="submit/$ISSUE-$GITHUB_RUN_ID"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$branch"
+          git checkout -b "$branch"
           git add themes previews
           git commit -m "Add a submitted theme (submission #$ISSUE)"
-          git push --force origin "$branch"
-          node scripts/propose.mjs pr --result _result.json --issue "$ISSUE" --login "$LOGIN" --repo "$REPO" --branch "$branch" > _pr.md
-          if url=$(gh pr view "$branch" --json url,state --jq 'select(.state=="OPEN") | .url') && [ -n "$url" ]; then
-            gh pr edit "$branch" --body-file _pr.md
-          else
-            url=$(gh pr create --base main --head "$branch" --title "Theme submission #$ISSUE" --body-file _pr.md)
-          fi
+          git push origin "$branch"
+          node scripts/propose.mjs pr --result _result.json --issue "$ISSUE" --login "$LOGIN" --repo "$REPO" --sha "$(git rev-parse HEAD)" > _pr.md
+          url=$(gh pr create --base main --head "$branch" --title "Theme submission #$ISSUE" --body-file _pr.md)
           echo "PR_URL=$url" >> "$GITHUB_ENV"
 
       - name: Reply on the submission

@@ -27,7 +27,7 @@ const ctx = { issue: 12, login: 'someone', date: '2026-11-17' };
 test('a checked submission is staged: pack files, meta.json and both previews', () => {
   const root = tmp('uvt-root-');
   const r = stageSubmission(artifact(), root, ctx);
-  assert.deepEqual(r, { ok: true, folder: 'ember', name: 'EMBER' });
+  assert.deepEqual(r, { ok: true, folder: 'ember', name: 'EMBER', files: ['theme.json', 'emblem.bin'] });
   assert.deepEqual(fs.readdirSync(path.join(root, 'themes/ember')).sort(), ['emblem.bin', 'meta.json', 'theme.json']);
   assert.deepEqual(fs.readdirSync(path.join(root, 'previews/ember')).sort(), ['cyd.png', 'waveshare.png']);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'themes/ember/meta.json'), 'utf8')), { login: 'someone', issue: 12, added: '2026-11-17', author: 'Some One', basedOn: '' });
@@ -77,12 +77,32 @@ test('a theme the gallery already has is refused at this step too', () => {
   assert.equal(again.ok, false); assert.match(again.error, /already has/);
 });
 
-test('the same submission edited and re-checked replaces its own earlier staging', () => {
+test('a submission already in the gallery cannot be staged over itself, even from the same issue', () => {
   const root = tmp('uvt-root-');
   assert.equal(stageSubmission(artifact(), root, ctx).ok, true);
-  const r = stageSubmission(artifact({ files: { 'theme.json': '{"format":1,"name":"EMBER"}' } }), root, ctx);
-  assert.equal(r.ok, true, r.error);
-  assert.deepEqual(fs.readdirSync(path.join(root, 'themes/ember')).sort(), ['meta.json', 'theme.json']);
+  const before = fs.readFileSync(path.join(root, 'themes/ember/emblem.bin'), 'utf8');
+  const r = stageSubmission(artifact({ files: { 'theme.json': '{"format":1,"name":"EMBER"}', 'emblem.bin': 'CHANGED' } }), root, ctx);
+  assert.equal(r.ok, false); assert.match(r.error, /already has/);
+  assert.equal(fs.readFileSync(path.join(root, 'themes/ember/emblem.bin'), 'utf8'), before);
+});
+
+test('the name is the one inside theme.json, whatever the form said', () => {
+  const root = tmp('uvt-root-');
+  assert.equal(stageSubmission(artifact(), root, ctx).ok, true);                                  // the gallery now has EMBER
+  const sneaky = artifact({ sub: { folder: 'fresh', name: 'TOTALLY NEW', author: '', basedOn: '' }, folderOnDisk: 'fresh' });
+  const r = stageSubmission(sneaky, root, { ...ctx, issue: 13 });
+  assert.equal(r.ok, false, 'theme.json says EMBER, which the gallery has');
+  assert.match(r.error, /already has a theme called EMBER/);
+  const ok = stageSubmission(artifact({ sub: { folder: 'other', name: 'FORM NAME', author: '', basedOn: '' }, folderOnDisk: 'other', files: { 'theme.json': '{"format":1,"name":"REAL NAME"}' } }), root, { ...ctx, issue: 14 });
+  assert.deepEqual(ok, { ok: true, folder: 'other', name: 'REAL NAME', files: ['theme.json'] });
+});
+
+test('a theme.json with no readable name is refused', () => {
+  for (const tj of ['{nope', '{"format":1}', '{"name":7}', '{"name":"  "}', '[]']) {
+    const root = tmp('uvt-root-');
+    assert.equal(stageSubmission(artifact({ files: { 'theme.json': tj } }), root, ctx).ok, false, tj);
+    assert.deepEqual(fs.readdirSync(root), []);
+  }
 });
 
 test('bad context values are refused', () => {
@@ -108,11 +128,32 @@ test('the comment for an accepted submission links the pull request and the futu
   assert.match(b, /approved/);
 });
 
-test('the pull request text shows both pictures from its branch and closes the submission', () => {
-  const b = prBody({ folder: 'ember', name: 'EM`BER @x' }, { issue: 12, login: 'someone', repo: 'Em3ritus/umbravox-themes', branch: 'submit/12' });
+const SHA = '0123456789abcdef0123456789abcdef01234567';
+const prCtx = { issue: 12, login: 'someone', repo: 'Em3ritus/umbravox-themes', sha: SHA };
+
+test('the pull request text shows both pictures at the exact commit, names that commit, and closes the submission', () => {
+  const b = prBody({ folder: 'ember', name: 'EM`BER @x', files: ['theme.json', 'emblem.bin'] }, prCtx);
   assert.ok(b.includes('Closes #12'));
-  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/submit/12/previews/ember/cyd.png'));
-  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/submit/12/previews/ember/waveshare.png'));
+  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/' + SHA + '/previews/ember/cyd.png'));
+  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/' + SHA + '/previews/ember/waveshare.png'));
+  assert.equal(/submit\//.test(b), false, 'no link that follows a branch');
+  assert.ok(b.includes(SHA.slice(0, 12)));
   assert.equal(/@x/.test(b), false);
   assert.match(b, /Merge to approve/);
+  assert.match(b, /never changes/);
+});
+
+test('the pull request text says when a clip or sounds are included, and that they are not shown', () => {
+  const plain = prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json', 'emblem.bin'] }, prCtx);
+  assert.match(plain, /no radar clip and no alert sounds/);
+  const both = prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json', 'radar.vid', 'alert.snd'] }, prCtx);
+  assert.match(both, /radar clip \(`radar\.vid`\)/); assert.match(both, /alert sounds \(`alert\.snd`\)/);
+  assert.match(both, /not shown here/);
+  assert.ok(both.includes('https://github.com/Em3ritus/umbravox-themes/tree/' + SHA + '/themes/ember'));
+  const clip = prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json', 'radar.vid'] }, prCtx);
+  assert.match(clip, /radar clip/); assert.equal(/alert sounds \(/.test(clip), false);
+});
+
+test('a commit that is not a full hash is refused for the pull request text', () => {
+  assert.throws(() => prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json'] }, { ...prCtx, sha: 'submit/12' }), /commit/);
 });

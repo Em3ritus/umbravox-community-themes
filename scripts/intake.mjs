@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readZip, FOLDER_RE } from './zipread.mjs';
+import { readZip, themeName, FOLDER_RE } from './zipread.mjs';
 
 const ATTACHMENT = /https?:\/\/[^\s)\]>"']*\.zip\b[^\s)\]>"']*/gi;
 const GITHUB_ZIP = /^https:\/\/github\.com\/user-attachments\/files\/\d+\/[A-Za-z0-9._-]+\.zip$/;
@@ -60,12 +60,15 @@ function main(argv) {
   if (!sub.ok) return refuse(sub.error);
   const z = readZip(new Uint8Array(fs.readFileSync(zipFile)));
   if (!z.ok) return refuse(z.error);
+  // The name the gallery will show is the one inside theme.json; the form's name field is only a label for the issue.
+  const name = themeName(z.files.find((f) => f.name === 'theme.json').data);
+  if (!name) return refuse('The theme.json in the zip has no readable name, so the device would skip this theme. Save the theme from the designer again.');
 
   // z.folder passed FOLDER_RE and every name is one of the four pack files, so these joins cannot leave `out`.
   const dir = path.join(out, z.folder);
   fs.mkdirSync(dir, { recursive: true });
   for (const f of z.files) fs.writeFileSync(path.join(dir, f.name), f.data, { flag: 'wx' });
-  fs.writeFileSync(path.join(out, 'submission.json'), JSON.stringify({ folder: z.folder, name: sub.name, author: sub.author, basedOn: sub.basedOn }) + '\n');
+  fs.writeFileSync(path.join(out, 'submission.json'), JSON.stringify({ folder: z.folder, name, author: sub.author, basedOn: sub.basedOn }) + '\n');
   return 0;
 }
 

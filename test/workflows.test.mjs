@@ -48,6 +48,21 @@ test('it runs only for issues carrying the submission label, one run per issue a
   assert.match(job(sub, 'check'), /timeout-minutes: \d+/);
 });
 
+test('a reviewed pull request never changes: each run gets its own branch and earlier ones are closed', () => {
+  const p = job(sub, 'propose');
+  assert.match(p, /branch="submit\/\$ISSUE-\$GITHUB_RUN_ID"/);
+  assert.equal(/--force|-f origin|\+refs/.test(p), false, 'no force push');
+  assert.equal(/gh pr edit/.test(p), false, 'an open pull request is never rewritten');
+  assert.match(p, /startswith\("submit\/" \+ env\.ISSUE \+ "-"\)/);
+  assert.match(p, /gh pr close .*--delete-branch/);
+  assert.ok(p.indexOf('gh pr close') < p.indexOf('propose.mjs stage'), 'earlier pull requests are closed before anything is staged');
+  assert.match(p, /--sha "\$\(git rev-parse HEAD\)"/);
+});
+
+test('a closed submission (approved or rejected) is not checked again', () => {
+  assert.match(job(sub, 'check'), /if: contains\(github\.event\.issue\.labels\.\*\.name, 'submission'\) && github\.event\.issue\.state == 'open'/);
+});
+
 test('the download is capped and https only', () => {
   assert.match(sub, /--max-filesize 2097152/);
   assert.match(sub, /--proto '=https'/);

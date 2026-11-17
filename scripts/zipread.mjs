@@ -18,6 +18,16 @@ function crc32(data) {
   return (c ^ 0xFFFFFFFF) >>> 0;
 }
 
+// The theme's own name: the "name" inside theme.json. The gallery lists a theme under this name, so every check on
+// names uses it, never the name typed into the form. -> the name, or null when there is none to read.
+export function themeName(bytes) {
+  try {
+    const t = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    const n = t && typeof t === 'object' && !Array.isArray(t) && typeof t.name === 'string' ? t.name.trim() : '';
+    return n && n.length <= 60 && !/[\u0000-\u001f\u007f]/.test(n) ? n : null;
+  } catch (e) { return null; }
+}
+
 const no = (error) => ({ ok: false, error });
 const DAMAGED = 'The zip is damaged or is not a plain zip file.';
 

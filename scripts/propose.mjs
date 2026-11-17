@@ -6,11 +6,11 @@
 //   node scripts/propose.mjs stage   --in <dir> --root <dir> --issue <n> --login <name> --date <YYYY-MM-DD>
 //        prints {"ok":true,"folder","name"} or {"ok":false,"error"} on stdout; exit 0 either way, 2 on bad usage
 //   node scripts/propose.mjs comment --result <file> [--pr <url>]        the comment for the submission, on stdout
-//   node scripts/propose.mjs pr      --result <file> --issue <n> --login <name> --repo <owner/name> --branch <name>
+//   node scripts/propose.mjs pr      --result <file> --issue <n> --login <name> --repo <owner/name> --sha <commit>
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PACK_FILES, FOLDER_RE } from './zipread.mjs';
+import { PACK_FILES, FOLDER_RE, themeName } from './zipread.mjs';
 import { buildIndex, findClash } from './build-index.mjs';
 
 const SITE = 'https://em3ritus.github.io/umbravox-themes/';
@@ -54,7 +54,11 @@ export function stageSubmission(inDir, root, { issue, login, date }) {
     if (!data) return no(UNEXPECTED);
     files.push({ n, data });
   }
-  if (!files.some((f) => f.n === 'theme.json')) return no(UNEXPECTED);
+  const tj = files.find((f) => f.n === 'theme.json');
+  if (!tj) return no(UNEXPECTED);
+  // The name is read from theme.json here, again: the gallery lists that name, and submission.json is only a claim.
+  const name = themeName(tj.data);
+  if (!name) return no('The theme.json has no readable name, so the device would skip this theme.');
   const shots = [];
   for (const n of PREVIEWS) {
     const data = plain(path.join(prev, n), MAX_PNG);
@@ -62,20 +66,20 @@ export function stageSubmission(inDir, root, { issue, login, date }) {
     shots.push({ n, data });
   }
 
-  // The gallery must not already hold this folder or name, except as this same submission's earlier staging.
+  // The gallery must not already hold this folder or name. No exception for the same submission: this step always
+  // starts from main, so a match is a theme that was already approved, and an approved theme is never replaced.
   let index;
   try { index = buildIndex(root); } catch (e) { return no(UNEXPECTED); }
-  const others = { version: 1, themes: index.themes.filter((t) => !(t.folder === sub.folder && t.issue === issue)) };
-  const clash = findClash(others, { folder: sub.folder, name: sub.name });
+  const clash = findClash(index, { folder: sub.folder, name });
   if (clash) return no(clash);
 
   const tdir = path.join(root, 'themes', sub.folder), pdir = path.join(root, 'previews', sub.folder);
-  fs.rmSync(tdir, { recursive: true, force: true }); fs.rmSync(pdir, { recursive: true, force: true });
+  if (fs.existsSync(tdir) || fs.existsSync(pdir)) return no(UNEXPECTED);
   fs.mkdirSync(tdir, { recursive: true }); fs.mkdirSync(pdir, { recursive: true });
   for (const f of files) fs.writeFileSync(path.join(tdir, f.n), f.data);
   for (const s of shots) fs.writeFileSync(path.join(pdir, s.n), s.data);
   fs.writeFileSync(path.join(tdir, 'meta.json'), JSON.stringify({ login, issue, added: date, author: sub.author, basedOn: sub.basedOn }) + '\n');
-  return { ok: true, folder: sub.folder, name: sub.name };
+  return { ok: true, folder: sub.folder, name, files: files.map((f) => f.n) };
 }
 
 // Text that came from a submission, made safe to show in a comment: one line, no mentions, no markup.
@@ -91,12 +95,23 @@ export function commentBody(result, { pr = '' } = {}) {
     'The checks cover format only. If the theme is not approved, or is removed later, the reason will be noted here.'].join('\n');
 }
 
-export function prBody(result, { issue, login, repo, branch }) {
-  const raw = 'https://raw.githubusercontent.com/' + repo + '/' + branch + '/previews/' + result.folder + '/';
+// The pull request the owner reviews. Every link names the exact commit, so what is shown is what a merge publishes;
+// a later edit by the submitter closes this pull request and opens a new one (see submission.yml).
+export function prBody(result, { issue, login, repo, sha }) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) throw new Error('prBody: the commit must be a full 40-character hash');
+  const raw = 'https://raw.githubusercontent.com/' + repo + '/' + sha + '/previews/' + result.folder + '/';
+  const tree = 'https://github.com/' + repo + '/tree/' + sha + '/themes/' + result.folder;
+  const files = Array.isArray(result.files) ? result.files : [];
+  const extras = [files.includes('radar.vid') ? 'a radar clip (`radar.vid`)' : '', files.includes('alert.snd') ? 'alert sounds (`alert.snd`)' : ''].filter(Boolean);
+  const unseen = extras.length
+    ? '**This theme includes ' + extras.join(' and ') + ', which are not shown here.** The pictures are one still frame each. To see the clip and hear the sounds before approving, download [the theme folder at this commit](' + tree + ') and open it in the [designer](' + DESIGNER + ') with "Open an existing theme".'
+    : 'This theme has no radar clip and no alert sounds: the two pictures and the colours are all of it. [The theme folder at this commit](' + tree + ').';
   return ['Theme **' + quiet(result.name) + '** (`themes/' + result.folder + '/`), submitted by ' + quiet(login) + '.', '',
     '| CYD 2.8" | Waveshare 3.5" |', '| --- | --- |',
     '| ![CYD](' + raw + 'cyd.png) | ![Waveshare](' + raw + 'waveshare.png) |', '',
-    'The pictures were drawn by the device\'s own drawing code. The device\'s theme loader accepted the pack. Nothing checks where the picture, clip or sounds came from.', '',
+    unseen, '',
+    'The pictures were drawn by the device\'s own drawing code and are the ones stored in commit `' + sha.slice(0, 12) + '`. The device\'s theme loader accepted the pack. Nothing checks where the picture, clip or sounds came from.', '',
+    'This pull request never changes. If the submitter edits the submission, this one is closed and a new one is opened.', '',
     '**Merge to approve.** Close without merging to reject.', '',
     'Closes #' + issue].join('\n');
 }
@@ -113,8 +128,8 @@ function main(argv) {
     return 0;
   }
   if (cmd === 'comment' && arg('--result')) { process.stdout.write(commentBody(readResult(), { pr: arg('--pr') || '' }) + '\n'); return 0; }
-  if (cmd === 'pr' && arg('--result') && arg('--issue') && arg('--login') && arg('--repo') && arg('--branch')) {
-    process.stdout.write(prBody(readResult(), { issue: Number(arg('--issue')), login: arg('--login'), repo: arg('--repo'), branch: arg('--branch') }) + '\n');
+  if (cmd === 'pr' && arg('--result') && arg('--issue') && arg('--login') && arg('--repo') && arg('--sha')) {
+    process.stdout.write(prBody(readResult(), { issue: Number(arg('--issue')), login: arg('--login'), repo: arg('--repo'), sha: arg('--sha') }) + '\n');
     return 0;
   }
   process.stderr.write('usage: node scripts/propose.mjs stage|comment|pr ... (see the top of the file)\n');
