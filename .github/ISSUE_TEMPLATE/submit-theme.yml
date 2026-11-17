@@ -1,0 +1,45 @@
+name: Submit a theme
+description: Share a theme you made in the UMBRAVOX theme designer.
+title: "Theme: "
+labels: ["submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The designer's **Share** button opens this form and saves your theme as a zip. Drag that zip into the
+        **Theme zip** field below, tick both boxes and submit. Automatic checks then read the zip and reply here.
+        A theme appears in the gallery only after it is approved.
+  - type: input
+    id: theme-name
+    attributes:
+      label: Theme name
+      description: The name set in the designer. It must not already be in the gallery.
+    validations:
+      required: true
+  - type: input
+    id: author
+    attributes:
+      label: Author credit
+      description: How you want to be credited in the gallery. Leave empty for no credit line.
+  - type: input
+    id: based-on
+    attributes:
+      label: Based on
+      description: Filled in by the designer when you started from a gallery theme. Leave it as it is.
+  - type: textarea
+    id: zip
+    attributes:
+      label: Theme zip
+      description: Drag the zip the designer saved into this box and wait for the upload to finish. One zip only, 2 MB at most.
+    validations:
+      required: true
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Agreement
+      description: "The content rules: https://github.com/Em3ritus/umbravox-themes/blob/main/CONTENT-RULES.md"
+      options:
+        - label: I made everything in this theme, or I have the right to share it publicly.
+          required: true
+        - label: I have read the content rules and agree this theme may be removed at any time.
+          required: true
