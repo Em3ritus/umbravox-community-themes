@@ -13,7 +13,7 @@ const entry = (o = {}) => ({ folder: 'ember', name: 'EMBER', author: 'Some One',
 
 test('where the designer and the repository are', () => {
   assert.equal(DESIGNER, 'https://em3ritus.github.io/umbravox/designer/');
-  assert.equal(REPO, 'Em3ritus/umbravox-themes');
+  assert.equal(REPO, 'Em3ritus/umbravox-community-themes');
 });
 
 test('text from a submission is escaped', () => {
@@ -34,7 +34,7 @@ test('a card links to the designer, both pictures, the zip and the report form',
   assert.equal((html.match(/ alt="[^"]{8,}"/g) || []).length, 2);
   assert.match(html, /width="480" height="360"/); assert.match(html, /width="480" height="320"/);
   assert.ok(html.includes('data-zip="ember"'));
-  assert.ok(html.includes('href="https://github.com/Em3ritus/umbravox-themes/issues/new?template=report-theme.yml&amp;theme=ember"'));
+  assert.ok(html.includes('href="https://github.com/Em3ritus/umbravox-community-themes/issues/new?template=report-theme.yml&amp;theme=ember"'));
   assert.ok(html.includes('Open in designer')); assert.ok(html.includes('Download zip')); assert.ok(html.includes('Report'));
 });
 

@@ -3,7 +3,7 @@
 import { makeZip } from './zip.js';
 
 export const DESIGNER = 'https://em3ritus.github.io/umbravox/designer/';
-export const REPO = 'Em3ritus/umbravox-themes';
+export const REPO = 'Em3ritus/umbravox-community-themes';
 const FOLDER_RE = /^[A-Za-z0-9_-]{1,31}$/;
 const PACK_FILES = ['theme.json', 'emblem.bin', 'radar.vid', 'alert.snd'];
 

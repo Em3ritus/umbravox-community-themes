@@ -1,7 +1,7 @@
-# UMBRAVOX themes
+# UMBRAVOX community themes
 
 Themes people have shared for [UMBRAVOX](https://github.com/Em3ritus/umbravox), a passive, receive-only wardriver.
-The gallery is at <https://em3ritus.github.io/umbravox-themes/>.
+The gallery is at <https://em3ritus.github.io/umbravox-community-themes/>.
 
 A theme changes how the device looks: colours, a centre picture, an optional radar clip and optional alert sounds.
 It is data only. It cannot run code, and it cannot make the device transmit.

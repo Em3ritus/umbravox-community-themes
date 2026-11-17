@@ -37,7 +37,7 @@ body:
     id: agreement
     attributes:
       label: Agreement
-      description: "The content rules: https://github.com/Em3ritus/umbravox-themes/blob/main/CONTENT-RULES.md"
+      description: "The content rules: https://github.com/Em3ritus/umbravox-community-themes/blob/main/CONTENT-RULES.md"
       options:
         - label: I made everything in this theme, or I have the right to share it publicly.
           required: true

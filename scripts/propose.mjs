@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { PACK_FILES, FOLDER_RE, themeName } from './zipread.mjs';
 import { buildIndex, findClash } from './build-index.mjs';
 
-const SITE = 'https://em3ritus.github.io/umbravox-themes/';
+const SITE = 'https://em3ritus.github.io/umbravox-community-themes/';
 const DESIGNER = 'https://em3ritus.github.io/umbravox/designer/';
 const MAX = { 'theme.json': 4096, 'emblem.bin': 9728, 'radar.vid': 780312, 'alert.snd': 576020 };
 const PREVIEWS = ['cyd.png', 'waveshare.png'];

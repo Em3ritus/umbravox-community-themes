@@ -134,21 +134,21 @@ test('the comment for a refusal is plain, and cannot mention anyone or break out
 });
 
 test('the comment for an accepted submission links the pull request and the future gallery address', () => {
-  const b = commentBody({ ok: true, folder: 'ember', name: 'EMBER' }, { pr: 'https://github.com/Em3ritus/umbravox-themes/pull/5' });
+  const b = commentBody({ ok: true, folder: 'ember', name: 'EMBER' }, { pr: 'https://github.com/Em3ritus/umbravox-community-themes/pull/5' });
   assert.match(b, /passed the checks/);
-  assert.ok(b.includes('https://github.com/Em3ritus/umbravox-themes/pull/5'));
-  assert.ok(b.includes('https://em3ritus.github.io/umbravox-themes/#ember'));
+  assert.ok(b.includes('https://github.com/Em3ritus/umbravox-community-themes/pull/5'));
+  assert.ok(b.includes('https://em3ritus.github.io/umbravox-community-themes/#ember'));
   assert.match(b, /approved/);
 });
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
-const prCtx = { issue: 12, login: 'someone', repo: 'Em3ritus/umbravox-themes', sha: SHA };
+const prCtx = { issue: 12, login: 'someone', repo: 'Em3ritus/umbravox-community-themes', sha: SHA };
 
 test('the pull request text shows both pictures at the exact commit, names that commit, and closes the submission', () => {
   const b = prBody({ folder: 'ember', name: 'EM`BER @x', files: ['theme.json', 'emblem.bin'] }, prCtx);
   assert.ok(b.includes('Closes #12'));
-  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/' + SHA + '/previews/ember/cyd.png'));
-  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-themes/' + SHA + '/previews/ember/waveshare.png'));
+  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-community-themes/' + SHA + '/previews/ember/cyd.png'));
+  assert.ok(b.includes('https://raw.githubusercontent.com/Em3ritus/umbravox-community-themes/' + SHA + '/previews/ember/waveshare.png'));
   assert.equal(/submit\//.test(b), false, 'no link that follows a branch');
   assert.ok(b.includes(SHA.slice(0, 12)));
   assert.equal(/@x/.test(b), false);
@@ -162,7 +162,7 @@ test('the pull request text says when a clip or sounds are included, and that th
   const both = prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json', 'radar.vid', 'alert.snd'] }, prCtx);
   assert.match(both, /radar clip \(`radar\.vid`\)/); assert.match(both, /alert sounds \(`alert\.snd`\)/);
   assert.match(both, /not shown here/);
-  assert.ok(both.includes('https://github.com/Em3ritus/umbravox-themes/tree/' + SHA + '/themes/ember'));
+  assert.ok(both.includes('https://github.com/Em3ritus/umbravox-community-themes/tree/' + SHA + '/themes/ember'));
   const clip = prBody({ folder: 'ember', name: 'EMBER', files: ['theme.json', 'radar.vid'] }, prCtx);
   assert.match(clip, /radar clip/); assert.equal(/alert sounds \(/.test(clip), false);
 });
